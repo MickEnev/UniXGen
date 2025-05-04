@@ -1,0 +1,6 @@
+ torch lightning tqdm matplotlib nltk tokenizers numpy Pillow scipy torchxrayvision scikit-image albumentations einops omegaconf taming-transformers
+ 
+ from classifier.densenet import DenseNet
+ from inception_fid import InceptionV3  
+
+ pip install axial-positional-embedding

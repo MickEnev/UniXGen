@@ -20,7 +20,8 @@ random.seed(42)
 class TransformerLightning_unified(pl.LightningModule):
     def __init__(self, lr=5e-4, weight_decay=0.01,
                  pad_token_idx=0, sos_token_idx=1, eos_token_idx=2,
-                 save_dir="", causal_trans='conditioned_causal', **kargs):
+                 save_dir="", causal_trans='conditioned_causal', num_train_batches_per_epoch=100, 
+                 **kargs):
         super().__init__()
         self.kargs = kargs
         self.max_img_num = kargs['max_img_num']
@@ -41,6 +42,8 @@ class TransformerLightning_unified(pl.LightningModule):
         self.eos_token_idx = eos_token_idx
         self.save_dir = save_dir
         self.causal = causal_trans
+
+        self.num_train_batches_per_epoch = num_train_batches_per_epoch
 
         self.save_hyperparameters(ignore=['tokenizer'])
 
@@ -112,8 +115,8 @@ class TransformerLightning_unified(pl.LightningModule):
         }
         return output
 
-    def training_epoch_end(self, outputs):
-        torch.cuda.empty_cache()
+    # def training_epoch_end(self, outputs):
+    #     torch.cuda.empty_cache()
 
     def test_step(self, batch, batch_idx):
         img_paths, study_ids = batch['img_paths'], batch['study_id']
@@ -306,13 +309,12 @@ class TransformerLightning_unified(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=self.lr)
-        train_loader = self.train_dataloader()
         scheduler = {
             'scheduler':
                 get_cosine_schedule_with_warmup(
                     optimizer=optimizer,
                     num_warmup_steps=0,
-                    num_training_steps=self.kargs['epochs'] * len(train_loader)),
+                    num_training_steps=self.kargs['epochs'] * self.num_train_batches_per_epoch),
             'interval': 'step',
         }
         return {"optimizer": optimizer, "lr_scheduler": scheduler}

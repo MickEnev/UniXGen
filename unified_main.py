@@ -6,8 +6,8 @@ from functools import partial
 import torch.nn as nn
 
 import pytorch_lightning as pl
-from pytorch_lightning.plugins import DDPPlugin
-from pytorch_lightning.loggers import WandbLogger
+# from pytorch_lightning.plugins import DDPPlugin
+# from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 
@@ -21,6 +21,7 @@ from unified_plmodel import TransformerLightning_unified
 
 if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
     parser = argparse.ArgumentParser()
 
@@ -31,13 +32,13 @@ if __name__ == '__main__':
 
     parser.add_argument('--n_gpus', default=1, type=int)
     parser.add_argument('--n_epochs', default=200, type=int)
-    parser.add_argument('--batch_size', default=10, type=int)
+    parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--lr', default=4.5e-6, type=float, help='learning rate')
     parser.add_argument('--accumulate_grad_batches', default=1, type=float)
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='weight decay')
 
-    parser.add_argument('--img_root_dir', default='path/to/mimic-cxr-jpg', type=str)
-    parser.add_argument('--text_root_dir', default='path/to/mimic-cxr-database', type=str)
+    parser.add_argument('--img_root_dir', default='/ssd/mimic-cxr-jpg-2.0.0.physionet.org/files/', type=str)
+    parser.add_argument('--text_root_dir', default='/ssd/mimic-cxr-2.0.0.physionet.org/reports/', type=str)
     parser.add_argument('--train_meta_file', default='metadata/mimiccxr_train_sub_final.csv', type=str)
     parser.add_argument('--val_meta_file', default='metadata/mimiccxr_validate_sub_final.csv', type=str)
     parser.add_argument('--test_meta_file', default='metadata/mimiccxr_test_sub_final.csv', type=str)
@@ -45,9 +46,9 @@ if __name__ == '__main__':
     parser.add_argument('--merge_file', default='BBPE_tokenizer/merges.txt', type=str)
 
     parser.add_argument('--vqgan', default=512, type=int, help='vqgan img resolution')
-    parser.add_argument('--vqgan_model_path', default='mimiccxr_vqgan/last.ckpt', type=str)
-    parser.add_argument('--vqgan_config_path', default='mimiccxr_vqgan/2021-12-17T08-58-54-project.yaml', type=str)
-    parser.add_argument('--codebook_indices_path', default='mimiccxr_vqgan/mimiccxr_vqgan1024_res512_codebook_indices.pickle', type=str)
+    parser.add_argument('--vqgan_model_path', default='../vqgan/last.ckpt', type=str)
+    parser.add_argument('--vqgan_config_path', default='../vqgan/2021-12-17T08-58-54-project.yaml', type=str)
+    parser.add_argument('--codebook_indices_path', default='../vqgan/mimiccxr_vqgan1024_res512_codebook_indices.pickle', type=str)
 
 
     parser.add_argument('--max_img_num', default=3, type=int, help='must be less than or equal to target_count')
@@ -90,7 +91,7 @@ if __name__ == '__main__':
 
 
     parser.add_argument('--save_top_k', default=1, type=int)
-    parser.add_argument('--num_workers', default=8, type=int)
+    parser.add_argument('--num_workers', default=4, type=int)
     parser.add_argument('--gradient_clip_val', default=0, type=float)
     parser.add_argument('--num_sanity_val_steps', default=0, type=int)
     parser.add_argument('--fp16', default=False, type=str2bool, help='FP16')
@@ -211,6 +212,7 @@ if __name__ == '__main__':
         eos_token_idx=tokenizer.token_to_id("[EOS]"),
         save_dir='output',
         causal_trans=args.causal_clm,
+        num_train_batches_per_epoch=len(dm.train_dataloader()),
         **kargs_unified,
     )
 
@@ -239,13 +241,14 @@ if __name__ == '__main__':
     trainer_args = {
         'callbacks': [checkpoint_callback, lr_callback],
         'max_epochs': args.n_epochs,
-        'gpus': args.n_gpus,
-        'accelerator': 'ddp',
+        # 'gpus': args.n_gpus,
+        'accelerator': 'tpu',
+        'devices': 4,
         'num_sanity_val_steps': args.num_sanity_val_steps,
         'log_every_n_steps': 1,
-        'terminate_on_nan': True,
-        'checkpoint_callback': True,
-        'resume_from_checkpoint': args.reload_ckpt_dir
+        # 'terminate_on_nan': True,
+        # 'checkpoint_callback': True,
+        # 'resume_from_checkpoint': args.reload_ckpt_dir
     }
 
 
@@ -253,28 +256,26 @@ if __name__ == '__main__':
         model = model.load_from_checkpoint(args.reload_ckpt_dir)
 
     args.wandb_name = NOW
-    wandb_logger = WandbLogger(name=args.wandb_name, log_model=True, config=args, save_code=True)
+    # wandb_logger = WandbLogger(name=args.wandb_name, log_model=True, config=args, save_code=True)
 
-    trainer = pl.Trainer(**trainer_args, logger=wandb_logger, plugins=DDPPlugin(find_unused_parameters=True),
+    trainer = pl.Trainer(**trainer_args,
                          gradient_clip_val=args.gradient_clip_val, profiler="simple",
-                         accumulate_grad_batches=args.accumulate_grad_batches,
-                         replace_sampler_ddp=False)
+                         accumulate_grad_batches=args.accumulate_grad_batches)
 
-    wandb_logger.watch(model)
+    # wandb_logger.watch(model)
 
     if not args.test:
         trainer.fit(model, datamodule=dm)
         
-        trainer = pl.Trainer(**trainer_args, logger=wandb_logger, plugins=DDPPlugin(find_unused_parameters=True),
+        trainer = pl.Trainer(**trainer_args,
                              gradient_clip_val=args.gradient_clip_val,
-                             profiler="simple", limit_train_batches=0, limit_val_batches=0,
-                             replace_sampler_ddp=False)
+                             profiler="simple", limit_train_batches=0, limit_val_batches=0)
         
     else:
         model.ckpt_path = args.reload_ckpt_dir
         model.test_meta_file_name = args.test_meta_file.split('/')[-1].split('.')[0]
         model.max_img_num = args.max_img_num
         model.target_count = args.target_count
-        trainer = pl.Trainer(**trainer_args, logger=wandb_logger, plugins=DDPPlugin(find_unused_parameters=True), 
+        trainer = pl.Trainer(**trainer_args,
                                 gradient_clip_val=args.gradient_clip_val, profiler="simple", limit_train_batches=0, limit_val_batches=0)
         trainer.test(model, test_dataloaders=dm.test_dataloader()) 

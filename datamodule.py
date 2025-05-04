@@ -25,17 +25,15 @@ class CXRDataModule(pl.LightningDataModule):
         pass
 
     def train_dataloader(self):
-        sampler = torch.utils.data.distributed.DistributedSampler(self.train, shuffle=False)
         return DataLoader(self.train, batch_size=self.batch_size, num_workers=self.num_workers,
-                          shuffle=False, pin_memory=True, drop_last=True,
-                          sampler=sampler)
+                          shuffle=False, pin_memory=False, drop_last=True)
 
     def val_dataloader(self):
         return DataLoader(self.val, batch_size=self.batch_size, num_workers=self.num_workers,
-                          shuffle=False, pin_memory=True, drop_last=True)
+                          shuffle=False, pin_memory=False, drop_last=True)
 
     def test_dataloader(self):
         test_loader = DataLoader(self.test, batch_size=self.batch_size, num_workers=self.num_workers,
-                          shuffle=False, pin_memory=True, drop_last=False)
+                          shuffle=False, pin_memory=False, drop_last=False)
 
         return test_loader

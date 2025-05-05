@@ -15,6 +15,7 @@ einops
 omegaconf
 axial-positional-embedding
 torchvision
+transformers
 EOF
 
 # makes sure we stick to the right version of torch and xla

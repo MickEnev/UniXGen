@@ -28,3 +28,7 @@ gcloud compute tpus tpu-vm ssh "${TPU_NAME}" --worker=all --zone="${TPU_ZONE}" -
 # # and attach to TPU
 gcloud compute disks create "${SSD_NAME}" --size=1TB --type=pd-ssd --zone="${TPU_ZONE}"
 gcloud compute tpus tpu-vm update --attach-disk source="projects/${GCP_PROJECT_ID}/zones/us-central2-b/disks/${SSD_NAME}",mode=read-write "${TPU_NAME}"
+
+# make sure to ssh into the VM, init the disk and mount it to an empty directory
+# before data-scripts/ can use it.
+gcloud compute tpus tpu-vm scp --recurse --worker=all --zone="${TPU_ZONE}" './data-scripts/' swghosh@"${TPU_NAME}":~/

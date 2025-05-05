@@ -15,6 +15,13 @@ def eval_decorator(fn):
         return out
     return inner
 
+VIEW_MAP = {
+    'AP': 0,
+    'PA': 1,
+    'LATERAL': 2,
+    'LL': 2,       # Map LL to same as LATERAL
+    'PAD': 3
+}
 
 class PositionWiseFeedForward(nn.Module):
     def __init__(self, dim, mult=4, dropout=0., activation=None):
@@ -223,338 +230,101 @@ class TransformerLM_unified(nn.Module):
         self.performer.fix_projection_matrices_()
 
     def forward(self, batch, causal, return_encodings=False, **kwargs):  # kwargs = {'mask': tensor with same shape x}
-        img1, txt, modes, view = batch['img1'], batch['txt'], batch['modes'], batch['view_position']
-        b, n_img1, device = *img1.shape, img1.device
+        txt, view = batch['txt'], batch['view_position']
         b, n_txt, device = *txt.shape, txt.device
-        n = n_img1 + n_txt
 
-        imgs = [img1]
-        if 'img2' in batch.keys():
-            assert self.max_img_num >= 2
-            img2 = batch['img2']
-            b, n_img2, device = *img2.shape, img2.device
-            n += n_img2
-            imgs.append(img2)
-        if 'img3' in batch.keys():
-            assert self.max_img_num == 3
-            img3 = batch['img3']
-            b, n_img3, device = *img3.shape, img3.device
-            n += n_img3
-            imgs.append(img3)
+        img1 = batch['img1']
+        b, n_img1, device = *img1.shape, img1.device
+        img2 = batch['img2']
+        b, n_img2, device = *img2.shape, img2.device
+        img3 = batch['img3']
+        b, n_img3, device = *img3.shape, img3.device
+
+        n = n_img1 + n_txt + n_img2 + n_img3
+        imgs = [img1, img2, img3]
 
         assert n <= self.max_seq_len, f'sequence length {n} must be less than the max sequence length {self.max_seq_len}'
 
         # !# image; token and positional embeddings
-        x_images = []
-        for i, x_img_slot in enumerate(imgs):
-            outs = []
-            x_img = self.image_token_emb(x_img_slot)  # [b, img_len] --> [b, img_len, dim]
+        # -- VECTORIZED!
 
-            for bsz in range(b):
-                slot_view = view[i][bsz]
-                if slot_view == 'AP':
-                    out = self.ap_att_emb(x_img[bsz:bsz + 1])  # out: [img_len, dim]
-                elif slot_view == 'PA':
-                    out = self.pa_att_emb(x_img[bsz:bsz + 1])  # out: [img_len, dim]
-                elif slot_view == 'LATERAL':
-                    out = self.la_att_emb(x_img[bsz:bsz + 1])  # out: [img_len, dim]
-                elif slot_view == 'LL':
-                    out = self.la_att_emb(x_img[bsz:bsz + 1])  # out: [img_len, dim]
-                elif slot_view == 'PAD':
-                    out = self.pad_img_att_emb(x_img[bsz:bsz + 1])  # out: [img_len, dim]
-                else:
-                    raise ValueError
-                out = torch.unsqueeze(out, dim=0)  # out: [1, img_len, dim]
-                outs.append(out)
-            att = torch.cat(outs, dim=0)  # -> [b, img_len, dim]
+        # Step 1: Apply token embeddings to all images
+        x_img1 = self.image_token_emb(img1)  # [b, img_len1, dim]
+        x_img2 = self.image_token_emb(img2)  # [b, img_len2, dim]
+        x_img3 = self.image_token_emb(img3)  # [b, img_len3, dim]
 
-            pos_out = self.image_pos_emb(x_img)  # out: [B, img_len, dim]
+        # Step 2: Apply positional embeddings
+        pos_img1 = self.image_pos_emb(x_img1)  # [b, img_len1, dim]
+        pos_img2 = self.image_pos_emb(x_img2)  # [b, img_len2, dim]
+        pos_img3 = self.image_pos_emb(x_img3)  # [b, img_len3, dim]
 
-            x_images.append(x_img + att + pos_out)
+        # Step 3: Apply attention embeddings based on view types
+        # Stack views for vectorized operations
+        views = torch.stack(view, dim=1)  # [b, 3]
+
+        # Create embeddings for each view type
+        # For image 1,2,3
+        view_masks1 = F.one_hot(view[:, 0], num_classes=4).float()  # [b, 4]
+        view_masks2 = F.one_hot(view[:, 1], num_classes=4).float()
+        view_masks3 = F.one_hot(view[:, 2], num_classes=4).float()
+
+        # Apply embeddings for different view types
+        att_tensors1 = torch.stack([
+            self.ap_att_emb(x_img1),
+            self.pa_att_emb(x_img1),
+            self.la_att_emb(x_img1),
+            self.pad_img_att_emb(x_img1)
+        ], dim=1)  # [b, 4, seq_len, dim]
+
+        att_tensors2 = torch.stack([
+            self.ap_att_emb(x_img2),
+            self.pa_att_emb(x_img2),
+            self.la_att_emb(x_img2),
+            self.pad_img_att_emb(x_img2)
+        ], dim=1)  # [b, 4, seq_len, dim]
+
+        att_tensors3 = torch.stack([
+            self.ap_att_emb(x_img3),
+            self.pa_att_emb(x_img3),
+            self.la_att_emb(x_img3),
+            self.pad_img_att_emb(x_img3)
+        ], dim=1)  # [b, 4, seq_len, dim]
+
+        # Apply attention embeddings using broadcasting
+        # Reshape masks for broadcasting: [b, 4, 1, 1]
+        view_masks1 = view_masks1.unsqueeze(-1).unsqueeze(-1)
+        view_masks2 = view_masks2.unsqueeze(-1).unsqueeze(-1)
+        view_masks3 = view_masks3.unsqueeze(-1).unsqueeze(-1)
+
+        # Weighted sum using masks
+        att_img1 = (att_tensors1 * view_masks1).sum(dim=1)  # [b, seq_len, dim]
+        att_img2 = (att_tensors2 * view_masks2).sum(dim=1)  # [b, seq_len, dim]
+        att_img3 = (att_tensors3 * view_masks3).sum(dim=1)  # [b, seq_len, dim]
+
+        # Step 4: Combine embeddings
+        x_img1_final = x_img1 + att_img1 + pos_img1  # [b, n_img1, dim]
+        x_img2_final = x_img2 + att_img2 + pos_img2  # [b, n_img2, dim]
+        x_img3_final = x_img3 + att_img3 + pos_img3  # [b, n_img3, dim]
+        
+        # ---
 
         # !# text; token and positional embeddings
         x_text = self.token_emb(txt)
         x_text += self.txt_att_emb(x_text)
         x_text += self.pos_emb(x_text)
 
-        if len([1 for m in modes if len(set(m)) == 1]) == len(modes):
-            # FIx
-            if modes[-1][0] == 'txt':  # p(txt|imgs)
-                n_condition = n - n_txt
-                if self.max_img_num == 1:
-                    assert modes[0][0] == 'img1'
-                    x = torch.cat((x_images[0], x_text), dim=1)
+        # FEED x
+        x_stacked = torch.stack([x_text, x_img1_final, x_img2_final, x_img3_final], dim=1)
 
-                elif self.max_img_num == 2:
-                    if modes[0][0] == 'img1':
-                        x = torch.cat((x_images[0], x_images[1], x_text), dim=1)
-                    elif modes[0][0] == 'img2':
-                        x = torch.cat((x_images[1], x_images[0], x_text), dim=1)
-                elif self.max_img_num == 3:
-                    if modes[0][0] == 'img1':
-                        if modes[1][0] == 'img2':
-                            x = torch.cat((x_images[0], x_images[1], x_images[2], x_text), dim=1)
-                        else:
-                            x = torch.cat((x_images[0], x_images[2], x_images[1], x_text), dim=1)
-                    elif modes[0][0] == 'img2':
-                        if modes[1][0] == 'img1':
-                            x = torch.cat((x_images[1], x_images[0], x_images[2], x_text), dim=1)
-                        else:
-                            x = torch.cat((x_images[1], x_images[2], x_images[0], x_text), dim=1)
-                    elif modes[0][0] == 'img3':
-                        if modes[1][0] == 'img1':
-                            x = torch.cat((x_images[2], x_images[0], x_images[1], x_text), dim=1)
-                        else:
-                            x = torch.cat((x_images[2], x_images[1], x_images[0], x_text), dim=1)
+        perms = batch['modal_perms']
+        batch_indices = torch.arange(b).unsqueeze(1).expand(-1, 4)
+        permuted = x_stacked[batch_indices, perms]
+        x = permuted.reshape(b, n_txt)
 
-                elif self.max_img_num == 0:
-                    n_condition = 0
-                    x = x_text
-
-            elif modes[-1][0] == 'img3':  # p(img3|img1, img2, txt)
-                n_condition = n - n_img3
-                assert self.max_img_num == 3 or self.max_img_num == -1
-                if modes[0][0] == 'img1':
-                    if modes[1][0] == 'img2':
-                        x = torch.cat((x_images[0], x_images[1], x_text, x_images[2]), dim=1)
-                    else:
-                        x = torch.cat((x_images[0], x_text, x_images[1], x_images[2]), dim=1)
-                elif modes[0][0] == 'img2':
-                    if modes[1][0] == 'img1':
-                        x = torch.cat((x_images[1], x_images[0], x_text, x_images[2]), dim=1)
-                    else:
-                        x = torch.cat((x_images[1], x_text, x_images[0], x_images[2]), dim=1)
-                elif modes[0][0] == 'txt':
-                    if modes[1][0] == 'img1':
-                        x = torch.cat((x_text, x_images[0], x_images[1], x_images[2]), dim=1)
-                    else:
-                        x = torch.cat((x_text, x_images[1], x_images[0], x_images[2]), dim=1)
-
-            elif modes[-1][0] == 'img2':
-                n_condition = n - n_img2
-                assert self.max_img_num >= 2 or self.max_img_num == -1
-                if self.max_img_num == 2:
-                    if modes[0][0] == 'img1':
-                        x = torch.cat((x_images[0], x_text, x_images[1]), dim=1)
-                    elif modes[0][0] == 'txt':
-                        x = torch.cat((x_text, x_images[0], x_images[1]), dim=1)
-
-                elif self.max_img_num == 3:
-                    if modes[0][0] == 'img1':
-                        if modes[1][0] == 'img3':
-                            x = torch.cat((x_images[0], x_images[2], x_text, x_images[1]), dim=1)
-                        else:
-                            x = torch.cat((x_images[0], x_text, x_images[2], x_images[1]), dim=1)
-                    elif modes[0][0] == 'img3':
-                        if modes[1][0] == 'img1':
-                            x = torch.cat((x_images[2], x_images[0], x_text, x_images[1]), dim=1)
-                        else:
-                            x = torch.cat((x_images[2], x_text, x_images[0], x_images[1]), dim=1)
-                    elif modes[0][0] == 'txt':
-                        if modes[1][0] == 'img1':
-                            x = torch.cat((x_text, x_images[0], x_images[2], x_images[1]), dim=1)
-                        else:
-                            x = torch.cat((x_text, x_images[2], x_images[0], x_images[1]), dim=1)
-
-                elif self.max_img_num == -1:
-                    if len(set(sum(modes, []))) == 4:  # txt, 3
-                        if modes[0][0] == 'img1':
-                            if modes[1][0] == 'img3':
-                                x = torch.cat((x_images[0], x_images[2], x_text, x_images[1]), dim=1)
-                            else:
-                                x = torch.cat((x_images[0], x_text, x_images[2], x_images[1]), dim=1)
-                        elif modes[0][0] == 'img3':
-                            if modes[1][0] == 'img1':
-                                x = torch.cat((x_images[2], x_images[0], x_text, x_images[1]), dim=1)
-                            else:
-                                x = torch.cat((x_images[2], x_text, x_images[0], x_images[1]), dim=1)
-                        elif modes[0][0] == 'txt':
-                            if modes[1][0] == 'img1':
-                                x = torch.cat((x_text, x_images[0], x_images[2], x_images[1]), dim=1)
-                            else:
-                                x = torch.cat((x_text, x_images[2], x_images[0], x_images[1]), dim=1)
-                    elif len(set(sum(modes, []))) == 3:  # txt, 2
-                        if modes[0][0] == 'img1':
-                            x = torch.cat((x_images[0], x_text, x_images[1]), dim=1)
-                        elif modes[0][0] == 'txt':
-                            x = torch.cat((x_text, x_images[0], x_images[1]), dim=1)
-
-                else:
-                    ValueError
-
-            elif modes[-1][0] == 'img1':
-                n_condition = n - n_img1
-                if self.max_img_num == 1:
-                    x = torch.cat((x_text, x_images[0]), dim=1)
-
-                elif self.max_img_num == 2:
-                    if modes[0][0] == 'img2':
-                        x = torch.cat((x_images[1], x_text, x_images[0]), dim=1)
-                    elif modes[0][0] == 'txt':
-                        x = torch.cat((x_text, x_images[1], x_images[0]), dim=1)
-                elif self.max_img_num == 3:
-                    if modes[0][0] == 'img2':
-                        if modes[1][0] == 'img3':
-                            x = torch.cat((x_images[1], x_images[2], x_text, x_images[0]), dim=1)
-                        else:
-                            x = torch.cat((x_images[1], x_text, x_images[2], x_images[0]), dim=1)
-                    elif modes[0][0] == 'img3':
-                        if modes[1][0] == 'img2':
-                            x = torch.cat((x_images[2], x_images[1], x_text, x_images[0]), dim=1)
-                        else:
-                            x = torch.cat((x_images[2], x_text, x_images[1], x_images[0]), dim=1)
-                    elif modes[0][0] == 'txt':
-                        if modes[1][0] == 'img2':
-                            x = torch.cat((x_text, x_images[1], x_images[2], x_images[0]), dim=1)
-                        else:
-                            x = torch.cat((x_text, x_images[2], x_images[1], x_images[0]), dim=1)
-
-                elif self.max_img_num == 0:
-                    n_condition = 0
-                    x = x_images[0]
-
-                elif self.max_img_num == -1:
-                    if 'img3' in np.array(modes):
-                        if modes[0][0] == 'img2':
-                            if modes[1][0] == 'img3':
-                                x = torch.cat((x_images[1], x_images[2], x_text, x_images[0]), dim=1)
-                            else:
-                                x = torch.cat((x_images[1], x_text, x_images[2], x_images[0]), dim=1)
-                        elif modes[0][0] == 'img3':
-                            if modes[1][0] == 'img2':
-                                x = torch.cat((x_images[2], x_images[1], x_text, x_images[0]), dim=1)
-                            else:
-                                x = torch.cat((x_images[2], x_text, x_images[1], x_images[0]), dim=1)
-                        elif modes[0][0] == 'txt':
-                            if modes[1][0] == 'img2':
-                                x = torch.cat((x_text, x_images[1], x_images[2], x_images[0]), dim=1)
-                            else:
-                                x = torch.cat((x_text, x_images[2], x_images[1], x_images[0]), dim=1)
-                    elif 'img2' in np.array(modes):
-                        if modes[0][0] == 'img2':
-                            x = torch.cat((x_images[1], x_text, x_images[0]), dim=1)
-                        elif modes[0][0] == 'txt':
-                            x = torch.cat((x_text, x_images[1], x_images[0]), dim=1)
-                    elif 'img1' in np.array(modes):
-                        x = torch.cat((x_text, x_images[0]), dim=1)
-            else:
-                print(modes[-1][0])
-                raise ValueError
-        else:
-            x = []
-            for bsz in range(b):
-                if np.array(modes)[:, bsz][-1] == 'txt':
-                    n_condition = n - n_txt
-                    if self.max_img_num == 1:
-                        assert np.array(modes)[:, bsz][0] == 'img1'
-                        x.append(torch.cat((x_images[0][bsz], x_text[bsz]), dim=0).unsqueeze(0))
-
-                    elif self.max_img_num == 2:
-                        if np.array(modes)[:, bsz][0] == 'img1':
-                            x.append(torch.cat((x_images[0][bsz], x_images[1][bsz], x_text[bsz]), dim=0).unsqueeze(0))
-                        elif np.array(modes)[:, bsz][0] == 'img2':
-                            x.append(torch.cat((x_images[1][bsz], x_images[0][bsz], x_text[bsz]), dim=0).unsqueeze(0))
-
-                    elif self.max_img_num == 3:
-                        if np.array(modes)[:, bsz][0] == 'img1':
-                            if np.array(modes)[:, bsz][1] == 'img2':
-                                x.append(torch.cat((x_images[0][bsz], x_images[1][bsz], x_images[2][bsz], x_text[bsz]), dim=0).unsqueeze(0))
-                            else:
-                                x.append(torch.cat((x_images[0][bsz], x_images[2][bsz], x_images[1][bsz], x_text[bsz]), dim=0).unsqueeze(0))
-                        elif np.array(modes)[:, bsz][0] == 'img2':
-                            if np.array(modes)[:, bsz][1] == 'img1':
-                                x.append(torch.cat((x_images[1][bsz], x_images[0][bsz], x_images[2][bsz], x_text[bsz]), dim=0).unsqueeze(0))
-                            else:
-                                x.append(torch.cat((x_images[1][bsz], x_images[2][bsz], x_images[0][bsz], x_text[bsz]), dim=0).unsqueeze(0))
-                        elif np.array(modes)[:, bsz][0] == 'img3':
-                            if np.array(modes)[:, bsz][1] == 'img1':
-                                x.append(torch.cat((x_images[2][bsz], x_images[0][bsz], x_images[1][bsz], x_text[bsz]), dim=0).unsqueeze(0))
-                            else:
-                                x.append(torch.cat((x_images[2][bsz], x_images[1][bsz], x_images[0][bsz], x_text[bsz]), dim=0).unsqueeze(0))
-
-                elif np.array(modes)[:, bsz][-1] == 'img3':  # p(img3|img1, img2, txt)
-                    n_condition = n - n_img3
-                    assert self.max_img_num == 3 or self.max_img_num == -1
-                    if np.array(modes)[:, bsz][0] == 'img1':
-                        if np.array(modes)[:, bsz][1] == 'img2':
-                            x.append(torch.cat((x_images[0][bsz], x_images[1][bsz], x_text[bsz], x_images[2][bsz]), dim=0).unsqueeze(0))
-                        else:
-                            x.append(torch.cat((x_images[0][bsz], x_text[bsz], x_images[1][bsz], x_images[2][bsz]), dim=0).unsqueeze(0))
-                    elif np.array(modes)[:, bsz][0] == 'img2':
-                        if np.array(modes)[:, bsz][1] == 'img1':
-                            x.append(torch.cat((x_images[1][bsz], x_images[0][bsz], x_text[bsz], x_images[2][bsz]), dim=0).unsqueeze(0))
-                        else:
-                            x.append(torch.cat((x_images[1][bsz], x_text[bsz], x_images[0][bsz], x_images[2][bsz]), dim=0).unsqueeze(0))
-                    elif np.array(modes)[:, bsz][0] == 'txt':
-                        if np.array(modes)[:, bsz][1] == 'img1':
-                            x.append(torch.cat((x_text[bsz], x_images[0][bsz], x_images[1][bsz], x_images[2][bsz]), dim=0).unsqueeze(0))
-                        else:
-                            x.append(torch.cat((x_text[bsz], x_images[1][bsz], x_images[0][bsz], x_images[2][bsz]), dim=0).unsqueeze(0))
-
-                elif np.array(modes)[:, bsz][-1] == 'img2':
-                    n_condition = n - n_img2
-                    assert self.max_img_num >= 2 or self.max_img_num == -1
-                    if self.max_img_num == 2:
-                        if np.array(modes)[:, bsz][0] == 'img1':
-                            x.append(torch.cat((x_images[0][bsz], x_text[bsz], x_images[1][bsz]), dim=0).unsqueeze(0))
-                        elif np.array(modes)[:, bsz][0] == 'txt':
-                            x.append(torch.cat((x_text[bsz], x_images[0][bsz], x_images[1][bsz]), dim=0).unsqueeze(0))
-
-                    elif self.max_img_num == 3:
-                        if np.array(modes)[:, bsz][0] == 'img1':
-                            if np.array(modes)[:, bsz][1] == 'img3':
-                                x.append(torch.cat((x_images[0][bsz], x_images[2][bsz], x_text[bsz], x_images[1][bsz]), dim=0).unsqueeze(0))
-                            else:
-                                x.append(torch.cat((x_images[0][bsz], x_text[bsz], x_images[2][bsz], x_images[1][bsz]), dim=0).unsqueeze(0))
-                        elif np.array(modes)[:, bsz][0] == 'img3':
-                            if np.array(modes)[:, bsz][1] == 'img1':
-                                x.append(torch.cat((x_images[2][bsz], x_images[0][bsz], x_text[bsz], x_images[1][bsz]), dim=0).unsqueeze(0))
-                            else:
-                                x.append(torch.cat((x_images[2][bsz], x_text[bsz], x_images[0][bsz], x_images[1][bsz]), dim=0).unsqueeze(0))
-                        elif np.array(modes)[:, bsz][0] == 'txt':
-                            if np.array(modes)[:, bsz][1] == 'img1':
-                                x.append(torch.cat((x_text[bsz], x_images[0][bsz], x_images[2][bsz], x_images[1][bsz]), dim=0).unsqueeze(0))
-                            else:
-                                x.append(torch.cat((x_text[bsz], x_images[2][bsz], x_images[0][bsz], x_images[1][bsz]), dim=0).unsqueeze(0))
-                    else:
-                        ValueError
-
-                elif np.array(modes)[:, bsz][-1] == 'img1':
-                    n_condition = n - n_img1
-                    if self.max_img_num == 1:
-                        x.append(torch.cat((x_text[bsz], x_images[0][bsz]), dim=0).unsqueeze(0))
-
-                    elif self.max_img_num == 2:
-                        if np.array(modes)[:, bsz][0] == 'img2':
-                            x.append(torch.cat((x_images[1][bsz], x_text[bsz], x_images[0][bsz]), dim=0).unsqueeze(0))
-                        elif np.array(modes)[:, bsz][0] == 'txt':
-                            x.append(torch.cat((x_text[bsz], x_images[1][bsz], x_images[0][bsz]), dim=0).unsqueeze(0))
-                    elif self.max_img_num == 3:
-                        if np.array(modes)[:, bsz][0] == 'img2':
-                            if np.array(modes)[:, bsz][1] == 'img3':
-                                x.append(torch.cat((x_images[1][bsz], x_images[2][bsz], x_text[bsz], x_images[0][bsz]), dim=0).unsqueeze(0))
-                            else:
-                                x.append(torch.cat((x_images[1][bsz], x_text[bsz], x_images[2][bsz], x_images[0][bsz]), dim=0).unsqueeze(0))
-                        elif np.array(modes)[:, bsz][0] == 'img3':
-                            if np.array(modes)[:, bsz][1] == 'img2':
-                                x.append(torch.cat((x_images[2][bsz], x_images[1][bsz], x_text[bsz], x_images[0][bsz]), dim=0).unsqueeze(0))
-                            else:
-                                x.append(torch.cat((x_images[2][bsz], x_text[bsz], x_images[1][bsz], x_images[0][bsz]), dim=0).unsqueeze(0))
-                        elif np.array(modes)[:, bsz][0] == 'txt':
-                            if np.array(modes)[:, bsz][1] == 'img2':
-                                x.append(torch.cat((x_text[bsz], x_images[1][bsz], x_images[2][bsz], x_images[0][bsz]), dim=0).unsqueeze(0))
-                            else:
-                                x.append(torch.cat((x_text[bsz], x_images[2][bsz], x_images[1][bsz], x_images[0][bsz]), dim=0).unsqueeze(0))
-
-                else:
-                    print(modes[-1][0])
-                    raise ValueError
-
-            x = torch.cat(x, dim=0)
-
-        assert x.size(0) == b
-
+        # dropout layer
         x = self.dropout(x)
+
+        n_condition = n - n_txt
 
         # performer layers
         layer_pos_emb = self.layer_pos_emb(x)

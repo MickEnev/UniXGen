@@ -15,7 +15,11 @@ from nltk.translate.bleu_score import corpus_bleu
 from transformer_pytorch.transformer_unified import TransformerLM_unified
 from transformers.optimization import get_cosine_schedule_with_warmup
 
+import numpy as np
+
 random.seed(42)
+
+mode_map = np.array(['txt', 'img1', 'img2', 'img3'])
 
 class TransformerLightning_unified(pl.LightningModule):
     def __init__(self, lr=5e-4, weight_decay=0.01,
@@ -52,19 +56,14 @@ class TransformerLightning_unified(pl.LightningModule):
         return logit
 
     def training_step(self, batch, batch_idx):
-        img1, txt, modes, view = batch['img1'], batch['txt'], batch['modes'], batch['view_position']
+        img1, txt, modes, _ = batch['img1'], batch['txt'], batch['modes'], batch['view_position']
 
         assert txt.shape[0] == img1.shape[0]
         batch_size = txt.shape[0]
         txt_seq_len = txt.shape[1]
         img_seq_len = img1.shape[1]
-        n = img_seq_len + txt_seq_len
-        if 'img2' in batch.keys():
-            img2 = batch['img2']
-            n += img2.shape[1]
-        if 'img3' in batch.keys():
-            img3 = batch['img3']
-            n += img3.shape[1]
+        
+        n = (img_seq_len * 3) + txt_seq_len
 
         logit = self(batch)[:, :-1, :]
         max_neg_value = -torch.finfo(logit.dtype).max

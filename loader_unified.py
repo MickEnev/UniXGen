@@ -11,9 +11,23 @@ import albumentations.pytorch
 import torch
 from torch.utils.data import Dataset
 
+import numpy as np
+
 from vae import VQGanVAE
 
 random.seed(42)
+np.random.seed(42)
+
+VIEW_MAP = {
+    'AP': 0,
+    'PA': 1,
+    'LATERAL': 2,
+    'LL': 2,       # Map LL to same as LATERAL
+    'PAD': 3
+}
+
+mode_map = np.array(['txt', 'img1', 'img2', 'img3'])
+
 
 class UnifiedCXRDataset(Dataset):
 
@@ -158,7 +172,7 @@ class UnifiedCXRDataset(Dataset):
             else:
                 raise ValueError
             img_paths += (img_path + '|')
-            view_position.append(ViewPosition)
+            view_position.append(VIEW_MAP[ViewPosition])
 
         # PAD imgs
         if num_img_in_study < self.max_img_num:
@@ -167,7 +181,7 @@ class UnifiedCXRDataset(Dataset):
                 image_indices = [1024] * self.img_len
                 image_output.append(torch.tensor(image_indices))
                 img_paths += ('PAD' + '|')
-                view_position.append('PAD')
+                view_position.append(VIEW_MAP['PAD'])
 
             self.modes = ['txt']
             for i in range(num_img_in_study):
@@ -186,8 +200,12 @@ class UnifiedCXRDataset(Dataset):
         ids_list = self.tokenizer.encode(src).ids
         text_output = torch.tensor(ids_list)
 
+        mode_perms = np.random.permutation(np.arange(4))
 
-        outputs = {'txt': text_output, 'modes': self.modes, 'study_id': study_id,
+        mapped = mode_map[mode_perms].tolist()
+
+        view_position = torch.Tensor(view_position)
+        outputs = {'txt': text_output, 'modes': mapped, 'modal_perms': torch.Tensor(mode_perms), 'study_id': study_id,
                    'img_paths': img_paths, 'view_position': view_position}
 
         for i in range(self.max_img_num):

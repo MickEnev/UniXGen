@@ -318,15 +318,12 @@ class TransformerLM_unified(nn.Module):
         x_text_padded = F.pad(x_text, (0, 0, 0, n_img1 - n_txt), "constant", 0)
         x_stacked = torch.stack([x_text_padded, x_img1_final, x_img2_final, x_img3_final], dim=1)
 
-        # Apply permutation using gather
-        permuted = x_stacked.gather(1, perms.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, 1026, 768))
-
-        x_stacked = torch.stack([x_text, x_img1_final, x_img2_final, x_img3_final], dim=1)
+        n_seq = x_text_padded.shape[-1]
 
         perms = batch['modal_perms']
         batch_indices = torch.arange(b).unsqueeze(1).expand(-1, 4)
         permuted = x_stacked[batch_indices, perms]
-        x = permuted.reshape(b, -1)
+        x = permuted.reshape(b, -1, n_seq) # [B, seq_len, dim]
 
         # dropout layer
         x = self.dropout(x)

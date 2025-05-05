@@ -112,8 +112,11 @@ class AbsolutePositionalEmbedding(nn.Module):
         self.emb = nn.Embedding(max_seq_len, dim)
 
     def forward(self, x):
-        t = torch.arange(x.shape[1], device=x.device)
-        return self.emb(t)
+        batch_size, seq_len, _ = x.shape
+        positions = torch.arange(seq_len, device=x.device)  # [seq_len]
+        pos_emb = self.emb(positions)  # [seq_len, dim]
+        pos_emb = pos_emb.unsqueeze(0).expand(batch_size, -1, -1)  # [batch_size, seq_len, dim]
+        return pos_emb
 
 # sinusoidal positional embeddings
 

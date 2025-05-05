@@ -204,8 +204,8 @@ class UnifiedCXRDataset(Dataset):
 
         mapped = mode_map[mode_perms].tolist()
 
-        view_position = torch.Tensor(view_position)
-        outputs = {'txt': text_output, 'modes': mapped, 'modal_perms': torch.Tensor(mode_perms), 'study_id': study_id,
+        view_position = torch.LongTensor(view_position)
+        outputs = {'txt': text_output, 'modes': mapped, 'modal_perms': torch.LongTensor(mode_perms), 'study_id': study_id,
                    'img_paths': img_paths, 'view_position': view_position}
 
         for i in range(self.max_img_num):

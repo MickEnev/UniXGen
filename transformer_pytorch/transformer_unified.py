@@ -260,7 +260,7 @@ class TransformerLM_unified(nn.Module):
 
         # Step 3: Apply attention embeddings based on view types
         # Stack views for vectorized operations
-        views = torch.stack(view, dim=1)  # [b, 3]
+        # views = torch.stack(view, dim=1)  # [b, 3]
 
         # Create embeddings for each view type
         # For image 1,2,3
@@ -290,6 +290,7 @@ class TransformerLM_unified(nn.Module):
             self.pad_img_att_emb(x_img3)
         ], dim=1)  # [b, 4, seq_len, dim]
 
+
         # Apply attention embeddings using broadcasting
         # Reshape masks for broadcasting: [b, 4, 1, 1]
         view_masks1 = view_masks1.unsqueeze(-1).unsqueeze(-1)
@@ -314,17 +315,23 @@ class TransformerLM_unified(nn.Module):
         x_text += self.pos_emb(x_text)
 
         # FEED x
+        x_text_padded = F.pad(x_text, (0, 0, 0, n_img1 - n_txt), "constant", 0)
+        x_stacked = torch.stack([x_text_padded, x_img1_final, x_img2_final, x_img3_final], dim=1)
+
+        # Apply permutation using gather
+        permuted = x_stacked.gather(1, perms.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, 1026, 768))
+
         x_stacked = torch.stack([x_text, x_img1_final, x_img2_final, x_img3_final], dim=1)
 
         perms = batch['modal_perms']
         batch_indices = torch.arange(b).unsqueeze(1).expand(-1, 4)
         permuted = x_stacked[batch_indices, perms]
-        x = permuted.reshape(b, n_txt)
+        x = permuted.reshape(b, -1)
 
         # dropout layer
         x = self.dropout(x)
 
-        n_condition = n - n_txt
+        n_condition = n - n_img1
 
         # performer layers
         layer_pos_emb = self.layer_pos_emb(x)

@@ -5,7 +5,11 @@ View-Specific Chest X-ray Generation model training and inference on Cloud TPU v
 This repo contains our work of reproducing the published work "Vision-Language Generative Model for View-Specific Chest X-ray Generation".
 
 ```
-Lee, H., Lee, D. Y., Kim, W., Kim, J. H., Kim, T., Kim, J., Sunwoo, L., & Choi, E. (2024). Vision-Language Generative Model for View-Specific Chest X-ray Generation. Proceedings of Machine Learning Research, 248, 280-296.
+Lee, H., Lee, D. Y., Kim, W., Kim, J. H., Kim, T., Kim, J., Sunwoo, L., & Choi, E. (2024).
+
+Vision-Language Generative Model for View-Specific Chest X-ray Generation.
+
+Proceedings of Machine Learning Research, 248, 280-296.
 ```
 
 [arXiv](https://arxiv.org/abs/2302.12172) | [Scopus](https://www.scopus.com/record/display.uri?eid=2-s2.0-85203836270&origin=inward&txGid=05d022ccd2c395a6353770faec614bba)

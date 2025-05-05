@@ -7,7 +7,7 @@ import numpy as np
 
 import torch
 from torch.optim import AdamW
-from torch.nn.functional import cross_entropy
+from torch.nn import functional as F
 
 import pytorch_lightning as pl
 
@@ -99,12 +99,15 @@ class TransformerLightning_unified(pl.LightningModule):
                 if mode.startswith('img'):
                     target_lst.append(target + self.num_txt_tokens)
                 else:
+                    # hack: remove it
+                    # pad 'txt' target to attain 1026
+                    target = F.pad(target, (0, 1026 - 256), "constant", 0)
                     target_lst.append(target)
         target = torch.cat(target_lst, dim=0)
 
         ignore_classes = torch.ones(self.num_txt_tokens + self.num_img_tokens)
         ignore_classes[1024 + self.num_txt_tokens] = 0.
-        loss = cross_entropy(logit, target, ignore_index=self.pad_token_idx, weight=ignore_classes.to(logit.device))
+        loss = F.cross_entropy(logit, target, ignore_index=self.pad_token_idx, weight=ignore_classes.to(logit.device))
 
         self.log('train_loss', loss, on_step=True, on_epoch=True, sync_dist=True)
 

@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/home/swghosh/tpu-scripts/taming-transformers')
+
 import os
 import argparse
 import datetime

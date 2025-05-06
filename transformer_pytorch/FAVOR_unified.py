@@ -156,7 +156,7 @@ class FastAttention(nn.Module):
 
         self.causal = causal
         if self.causal:
-            self.causal_linear_fn = partial(all_modality_causal_linear_attn_noncuda)
+            self.causal_linear_fn = partial(all_modality_causal_linear_attn_cuda)
 
     @torch.no_grad()
     def redraw_projection_matrix(self, device):

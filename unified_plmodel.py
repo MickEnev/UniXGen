@@ -23,6 +23,9 @@ class TransformerLightning_unified(pl.LightningModule):
                  save_dir="", causal_trans='conditioned_causal', num_train_batches_per_epoch=100, 
                  **kargs):
         super().__init__()
+        # compat with lightning v1
+        self.log = print
+
         self.kargs = kargs
         self.max_img_num = kargs['max_img_num']
         self.under_sample = kargs['under_sample']
@@ -48,6 +51,8 @@ class TransformerLightning_unified(pl.LightningModule):
         self.save_hyperparameters(ignore=['tokenizer'])
 
         self.test_step_outputs = []
+        os.makedirs(self.save_dir, exist_ok=True)
+
 
     def forward(self, batch):
         logit = self.transformerLM_unified(batch, causal=self.causal)

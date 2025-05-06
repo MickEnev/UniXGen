@@ -47,6 +47,8 @@ class TransformerLightning_unified(pl.LightningModule):
 
         self.save_hyperparameters(ignore=['tokenizer'])
 
+        self.test_step_outputs = []
+
     def forward(self, batch):
         logit = self.transformerLM_unified(batch, causal=self.causal)
         return logit
@@ -218,10 +220,13 @@ class TransformerLightning_unified(pl.LightningModule):
             output['gen_image3'] = gen_images3
             output['modes_img3'] = modes_img3
 
+        self.test_step_outputs.append(output)
         return output
 
 
-    def test_epoch_end(self, test_step_outputs):
+    def on_test_epoch_end(self):
+        test_step_outputs = self.test_step_outputs
+
         from tokenizers import ByteLevelBPETokenizer
         from tokenizers.processors import BertProcessing
         tokenizer = ByteLevelBPETokenizer('BBPE_tokenizer/vocab.json', 'BBPE_tokenizer/merges.txt')
@@ -306,6 +311,7 @@ class TransformerLightning_unified(pl.LightningModule):
                 print(f'\n\n')
 
         time.sleep(0.5)
+        self.test_step_outputs = []
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=self.lr)

@@ -4,7 +4,7 @@ import subprocess
 from glob import glob
 
 models = {
-    'ckpt/unixgen.ckpt'
+    '../unixgen.ckpt'
     : [
         ['fixed_each_unified', 1, 1],
 

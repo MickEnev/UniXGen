@@ -32,7 +32,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--n_gpus', default=1, type=int)
     parser.add_argument('--n_epochs', default=200, type=int)
-    parser.add_argument('--batch_size', default=16, type=int)
+    parser.add_argument('--batch_size', default=4, type=int)
     parser.add_argument('--lr', default=4.5e-6, type=float, help='learning rate')
     parser.add_argument('--accumulate_grad_batches', default=1, type=float)
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='weight decay')
@@ -91,7 +91,7 @@ if __name__ == '__main__':
 
 
     parser.add_argument('--save_top_k', default=1, type=int)
-    parser.add_argument('--num_workers', default=4, type=int)
+    parser.add_argument('--num_workers', default=1, type=int)
     parser.add_argument('--gradient_clip_val', default=0, type=float)
     parser.add_argument('--num_sanity_val_steps', default=0, type=int)
     parser.add_argument('--fp16', default=False, type=str2bool, help='FP16')
@@ -242,8 +242,8 @@ if __name__ == '__main__':
         'callbacks': [checkpoint_callback, lr_callback],
         'max_epochs': args.n_epochs,
         # 'gpus': args.n_gpus,
-        'accelerator': 'tpu',
-        'devices': 4,
+        'accelerator': 'cpu',
+        'devices': 'auto',
         'num_sanity_val_steps': args.num_sanity_val_steps,
         'log_every_n_steps': 1,
         # 'terminate_on_nan': True,
@@ -253,7 +253,21 @@ if __name__ == '__main__':
 
 
     if args.reload_ckpt_dir and args.test:
-        model = model.load_from_checkpoint(args.reload_ckpt_dir)
+        del model 
+        model = TransformerLightning_unified.load_from_checkpoint(args.reload_ckpt_dir,
+            strict=False,
+
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            tokenizer=tokenizer,
+            pad_token_idx=tokenizer.token_to_id("[PAD]"),
+            sos_token_idx=tokenizer.token_to_id("[SOS]"),
+            eos_token_idx=tokenizer.token_to_id("[EOS]"),
+            save_dir='output',
+            causal_trans=args.causal_clm,
+            num_train_batches_per_epoch=len(dm.train_dataloader()),
+            **kargs_unified
+        )
 
     args.wandb_name = NOW
     # wandb_logger = WandbLogger(name=args.wandb_name, log_model=True, config=args, save_code=True)
@@ -278,4 +292,4 @@ if __name__ == '__main__':
         model.target_count = args.target_count
         trainer = pl.Trainer(**trainer_args,
                                 gradient_clip_val=args.gradient_clip_val, profiler="simple", limit_train_batches=0, limit_val_batches=0)
-        trainer.test(model, test_dataloaders=dm.test_dataloader()) 
+        trainer.test(model, dm.test_dataloader()) 

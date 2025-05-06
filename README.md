@@ -1,8 +1,8 @@
-# Training UniXGen on TPU
+# ViewXGen Unified Transformer Model on Cloud TPUs
 
 View-Specific Chest X-ray Generation model training and inference on Cloud TPU v4.
 
-This repo contains our work of reproducing the published work "Vision-Language Generative Model for View-Specific Chest X-ray Generation".
+This repo contains our work of reproducing some parts of the published work "Vision-Language Generative Model for View-Specific Chest X-ray Generation".
 
 ```
 Lee, H., Lee, D. Y., Kim, W., Kim, J. H., Kim, T., Kim, J., Sunwoo, L., & Choi, E. (2024).

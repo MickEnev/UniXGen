@@ -1,4 +1,6 @@
 import os
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+
 import csv
 import pickle
 import random
@@ -14,20 +16,16 @@ import torch
 import torchvision.transforms as TF
 from torch.nn.functional import adaptive_avg_pool2d
 
-try:
-    from tqdm import tqdm
-except ImportError:
-    # If tqdm is not available, provide a mock version of it
-    def tqdm(x):
-        return x
+from tqdm import tqdm
 
-from classifier.densenet import DenseNet
-from inception_fid import InceptionV3
 import torchxrayvision as xrv
 import skimage
 
 from vae import VQGanVAE
+import albumentations
 import albumentations.pytorch
+
+
 
 def set_seed(seed):
     random.seed(seed)
@@ -39,23 +37,23 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-parser.add_argument('--gt_path', type=str, default=None, help='path to the original image path')
-parser.add_argument('--gen_path', type=str, default=None, help='path to the generated image path')
 
-parser.add_argument('--codebook_indices', type=str, default='mimiccxr_vqgan/last.ckpt', help='path to the codebook indices path')
-parser.add_argument('--vagan', type=str, default='mimiccxr_vqgan/last.ckpt', help='path to the vqgan model path')
-parser.add_argument('--vagan_config', type=str, default='mimiccxr_vqgan/last.ckpt', help='path to the vqgam config path')
+parser.add_argument('--gt-path', type=str, default='', help='')
+parser.add_argument('--gen-path', type=str, default='', help='')
+
+parser.add_argument('--codebook_indices', type=str, default='../vqgan/mimiccxr_vqgan1024_res512_codebook_indices.pickle', help='path to the codebook indices path')
+parser.add_argument('--vqgan', type=str, default='../vqgan/last.ckpt', help='path to the vqgan model path')
+parser.add_argument('--vqgan_config', type=str, default='../vqgan/2021-12-17T08-58-54-project.yaml', help='path to the vqgam config path')
 
 parser.add_argument('--dims', type=int, default=1024, help='Batch size to use')
-parser.add_argument('--batch-size', type=int, default=50, help='Batch size to use')
-parser.add_argument('--num-workers', type=int, help=('Number of processes to use for data loading. Defaults to `min(8, num_cpus)`'))
-parser.add_argument('--device', type=str, default=None, help='Device to use. Like cuda, cuda:0 or cpu')
+parser.add_argument('--batch-size', type=int, default=1, help='Batch size to use')
 
 
 IMAGE_EXTENSIONS = {'bmp', 'jpg', 'jpeg', 'pgm', 'png', 'ppm',
                     'tif', 'tiff', 'webp'}
 
 device = torch.device('cuda' if (torch.cuda.is_available()) else 'cpu')
+
 
 class ImagePathDataset(torch.utils.data.Dataset):
     def __init__(self, args, files, transforms=None):
@@ -99,6 +97,7 @@ class ImagePathDataset(torch.utils.data.Dataset):
         img = torch.from_numpy(img)
 
         return img
+
 
 
 def get_activations(args, files, model, batch_size=50, dims=2048, device='cpu', num_workers=1):
@@ -249,14 +248,16 @@ def calculate_fid_given_paths(args, gt_path, gen_path, batch_size, device, dims,
 
     return fid_value
 
-
-def main():
-    args = parser.parse_args()
+def main(args):
     set_seed(123)
     gt_files = glob(args.gt_path)
-    gen_files = glob(args.gt_path)
-    fid_value = calculate_fid_given_paths(args, gt_files, gen_files, args.batch_size, device, args.dims, num_workers)
-    print('FID: ', round(fid_value, 3))
+    gen_files = glob(args.gen_path)
+    fid_value = calculate_fid_given_paths(args, gt_files, gen_files, args.batch_size, device, args.dims, 1)
+    print('FID: ', round(fid_value, 5))
 
-if __name__ == '__main__':
-    main()
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+    args.gt_path = "/ssd/test-outputs/0.1-test-set-each-1-1/*_GT_*.jpeg"
+    args.gen_path = "/ssd/test-outputs/0.1-test-set-each-1-1/*_gen_*.jpeg"
+    main(args)

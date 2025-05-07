@@ -20,12 +20,15 @@ for infer_path in models:
     for output_pt_file in output_path:
         parser = argparse.ArgumentParser()
         parser.add_argument('--img_save', default=True, type=str2bool, help='')
-        parser.add_argument('--save_dir', default='/ssd/test-outputs/1xtest', type=str, help='')
+        parser.add_argument('--save_dir', default='', type=str, help='')
         parser.add_argument('--infer_num', default=str(32), type=str, help='infer num when load eval ckpt')
         parser.add_argument('--vqgan_model_path', default='../vqgan/last.ckpt', type=str)
         parser.add_argument('--vqgan_config_path', default='../vqgan/2021-12-17T08-58-54-project.yaml', type=str)
 
         args = parser.parse_args()
+
+        if args.save_dir == '':
+            args.save_dir = infer_path
 
         if args.img_save:
             os.makedirs(args.save_dir, exist_ok=True)

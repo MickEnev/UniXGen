@@ -8,11 +8,11 @@ models = {
     : [
         ['fixed_each_unified', 1, 1],
 
-        ['fixed_each_unified', 1, 2],
-        ['fixed_each_unified', 2, 2],
+        # ['fixed_each_unified', 1, 2],
+        # ['fixed_each_unified', 2, 2],
 
-        ['fixed_each_unified', 1, 3],
-        ['fixed_each_unified', 2, 3],
+        # ['fixed_each_unified', 1, 3],
+        # ['fixed_each_unified', 2, 3],
         ['fixed_each_unified', 3, 3],
     ]
 }
@@ -43,7 +43,6 @@ for model_path, configs in models.items():
                             TRAINING_CONFIG_LIST.append("--{}={}".format(k, v))
                     else:
                         TRAINING_CONFIG_LIST.append("--{}={}".format(k, v))
-                
                 os.makedirs(DIR, exist_ok=True)
                 with open(os.path.join(DIR, "config.txt"), "w") as f:
                     print(TRAINING_CONFIG_LIST, file=f)

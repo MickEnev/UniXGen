@@ -32,7 +32,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--n_gpus', default=1, type=int)
     parser.add_argument('--n_epochs', default=200, type=int)
-    parser.add_argument('--batch_size', default=5, type=int)
+    parser.add_argument('--batch_size', default=4, type=int)
     parser.add_argument('--lr', default=4.5e-6, type=float, help='learning rate')
     parser.add_argument('--accumulate_grad_batches', default=1, type=float)
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='weight decay')
@@ -292,5 +292,5 @@ if __name__ == '__main__':
         model.max_img_num = args.max_img_num
         model.target_count = args.target_count
         trainer = pl.Trainer(**trainer_args,
-                                gradient_clip_val=args.gradient_clip_val, profiler="simple", limit_test_batches=1.0)
+                                gradient_clip_val=args.gradient_clip_val, profiler="simple", limit_test_batches=0.1)
         trainer.test(model, dm.test_dataloader()) 

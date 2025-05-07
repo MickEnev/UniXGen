@@ -34,6 +34,6 @@ class CXRDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         test_loader = DataLoader(self.test, batch_size=self.batch_size, num_workers=self.num_workers,
-                          shuffle=False, pin_memory=False, drop_last=False)
+                          shuffle=True, pin_memory=False, drop_last=False)
 
         return test_loader

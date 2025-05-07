@@ -9,8 +9,10 @@ import torch
 from vae import VQGanVAE
 from helpers import str2bool
 
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+
 models = {
-    'path/to/saved_files'
+    '/ssd/test-outputs/1'
 }
 
 for infer_path in models:
@@ -18,10 +20,10 @@ for infer_path in models:
     for output_pt_file in output_path:
         parser = argparse.ArgumentParser()
         parser.add_argument('--img_save', default=True, type=str2bool, help='')
-        parser.add_argument('--save_dir', default='/path/to/decoded_imgs', type=str, help='')
+        parser.add_argument('--save_dir', default='/ssd/test-outputs/1xtest', type=str, help='')
         parser.add_argument('--infer_num', default=str(32), type=str, help='infer num when load eval ckpt')
-        parser.add_argument('--vqgan_model_path', default='mimiccxr_vqgan/last.ckpt', type=str)
-        parser.add_argument('--vqgan_config_path', default='mimiccxr_vqgan/2021-12-17T08-58-54-project.yaml', type=str)
+        parser.add_argument('--vqgan_model_path', default='../vqgan/last.ckpt', type=str)
+        parser.add_argument('--vqgan_config_path', default='../vqgan/2021-12-17T08-58-54-project.yaml', type=str)
 
         args = parser.parse_args()
 
@@ -43,7 +45,7 @@ for infer_path in models:
                 name = name_paths[-4] + "_" + name_paths[-3] + "_" + name_paths[-2]
 
                 for i in range(1, max_img_num+1):
-                    ngpus, bsz, num_codes = row[f'GT_image{i}'].size()
+                    bsz, num_codes = row[f'GT_image{i}'].size()
 
                     GT_tensor = row[f'GT_image{i}'].reshape(-1, num_codes)[b][1:-1].unsqueeze(0)
                     gen_tensor = row[f'gen_image{i}'].reshape(-1, num_codes)[b][1:-1].unsqueeze(0)

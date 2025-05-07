@@ -32,7 +32,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--n_gpus', default=1, type=int)
     parser.add_argument('--n_epochs', default=200, type=int)
-    parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--batch_size', default=5, type=int)
     parser.add_argument('--lr', default=4.5e-6, type=float, help='learning rate')
     parser.add_argument('--accumulate_grad_batches', default=1, type=float)
     parser.add_argument('--weight_decay', default=1e-6, type=float, help='weight decay')
@@ -90,6 +90,7 @@ if __name__ == '__main__':
                         help='use rotary positional embedding, which endows linear attention with relative positional encoding with no learned parameters. should always be turned on unless if you want to go back to old absolute positional encoding')
 
 
+    parser.add_argument('--save_dir', default="output", type=str)
     parser.add_argument('--save_top_k', default=1, type=int)
     parser.add_argument('--num_workers', default=1, type=int)
     parser.add_argument('--gradient_clip_val', default=0, type=float)
@@ -210,7 +211,7 @@ if __name__ == '__main__':
         pad_token_idx=tokenizer.token_to_id("[PAD]"),
         sos_token_idx=tokenizer.token_to_id("[SOS]"),
         eos_token_idx=tokenizer.token_to_id("[EOS]"),
-        save_dir='output',
+        save_dir=args.save_dir,
         causal_trans=args.causal_clm,
         num_train_batches_per_epoch=len(dm.train_dataloader()),
         **kargs_unified,
@@ -241,9 +242,9 @@ if __name__ == '__main__':
     trainer_args = {
         'callbacks': [checkpoint_callback, lr_callback],
         'max_epochs': args.n_epochs,
-        # 'gpus': args.n_gpus,
-        'accelerator': 'cpu',
-        'devices': 'auto',
+        # 'gpus': 1,
+        'accelerator': 'gpu',
+        'devices': 1,
         'num_sanity_val_steps': args.num_sanity_val_steps,
         'log_every_n_steps': 1,
         # 'terminate_on_nan': True,
@@ -263,7 +264,7 @@ if __name__ == '__main__':
             pad_token_idx=tokenizer.token_to_id("[PAD]"),
             sos_token_idx=tokenizer.token_to_id("[SOS]"),
             eos_token_idx=tokenizer.token_to_id("[EOS]"),
-            save_dir='output',
+            save_dir=args.save_dir,
             causal_trans=args.causal_clm,
             num_train_batches_per_epoch=len(dm.train_dataloader()),
             **kargs_unified
@@ -291,5 +292,5 @@ if __name__ == '__main__':
         model.max_img_num = args.max_img_num
         model.target_count = args.target_count
         trainer = pl.Trainer(**trainer_args,
-                                gradient_clip_val=args.gradient_clip_val, profiler="simple", limit_train_batches=0, limit_val_batches=0)
+                                gradient_clip_val=args.gradient_clip_val, profiler="simple", limit_test_batches=1.0)
         trainer.test(model, dm.test_dataloader()) 

@@ -3,6 +3,8 @@ import csv
 import math
 import time
 import random
+import glob
+
 import numpy as np
 
 import torch
@@ -50,8 +52,11 @@ class TransformerLightning_unified(pl.LightningModule):
 
         self.save_hyperparameters(ignore=['tokenizer'])
 
-        self.test_step_outputs = []
         os.makedirs(self.save_dir, exist_ok=True)
+
+        self.bdir = os.path.join(self.save_dir, "batches")
+        os.makedirs(self.bdir, exist_ok=True)
+
 
 
     def forward(self, batch):
@@ -225,12 +230,15 @@ class TransformerLightning_unified(pl.LightningModule):
             output['gen_image3'] = gen_images3
             output['modes_img3'] = modes_img3
 
-        self.test_step_outputs.append(output)
+        torch.save(output, os.path.join(self.bdir, "batch-%d.pt" % batch_idx))
         return output
 
 
     def on_test_epoch_end(self):
-        test_step_outputs = self.test_step_outputs
+        test_step_outputs = []
+        for pt_path in glob.glob(self.bdir + "/*.pt"):
+            out = torch.load(pt_path)
+            test_step_outputs.append(out)
 
         from tokenizers import ByteLevelBPETokenizer
         from tokenizers.processors import BertProcessing
@@ -314,9 +322,6 @@ class TransformerLightning_unified(pl.LightningModule):
                 f_img.close()
                 print("GEN_reports_test saved.")
                 print(f'\n\n')
-
-        time.sleep(0.5)
-        self.test_step_outputs = []
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=self.lr)

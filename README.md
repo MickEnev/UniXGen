@@ -4,8 +4,11 @@ View-Specific Chest X-ray Generation model training and inference on Cloud TPU v
 
 This repo contains our work of reproducing some parts of the published work "Vision-Language Generative Model for View-Specific Chest X-ray Generation".
 
+For the video presentation covering a brief about our work please visit: https://mediaspace.illinois.edu/media/t/1_l8vuackc.
+
 ```
 Lee, H., Lee, D. Y., Kim, W., Kim, J. H., Kim, T., Kim, J., Sunwoo, L., & Choi, E. (2024).
+
 
 Vision-Language Generative Model for View-Specific Chest X-ray Generation.
 
@@ -27,3 +30,7 @@ Steps to reproduce model training on TPU:
 1. Run [create-n-setup-tpu-vm.sh](./create-n-setup-tpu-vm.sh) script
 2. Run unified_main.py
 
+## Project Member(s)
+
+- Swarup Ghosh (UIUC Net ID: swarupg2)
+- Mick Enev (UIUC Net ID: menev2)
